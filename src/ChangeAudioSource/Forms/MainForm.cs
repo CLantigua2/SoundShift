@@ -23,7 +23,7 @@ internal sealed class MainForm : Form
 
     internal MainForm()
     {
-        settings = SettingsStore.Load();
+        settings = SettingsStore.LoadDefault();
         pendingKey = settings.Key;
         pendingModifiers = settings.Modifiers;
 
@@ -50,7 +50,7 @@ internal sealed class MainForm : Form
             Location = new Point(12, 42),
             Width = 300,
             TabStop = true,
-            Text = FormatHotkey(pendingModifiers, pendingKey)
+            Text = HotkeyDisplayFormatter.FormatHotkey(pendingModifiers, pendingKey)
         };
         hotkeyTextBox.KeyDown += HotkeyTextBox_KeyDown;
 
@@ -66,7 +66,7 @@ internal sealed class MainForm : Form
         {
             AutoSize = true,
             Location = new Point(110, 79),
-            Text = "Active: " + FormatHotkey(settings.Modifiers, settings.Key)
+            Text = "Active: " + HotkeyDisplayFormatter.FormatHotkey(settings.Modifiers, settings.Key)
         };
 
         startWithWindowsCheckBox = new CheckBox
@@ -165,7 +165,7 @@ internal sealed class MainForm : Form
 
         pendingKey = key;
         pendingModifiers = modifiers;
-        hotkeyTextBox.Text = FormatHotkey(pendingModifiers, pendingKey);
+        hotkeyTextBox.Text = HotkeyDisplayFormatter.FormatHotkey(pendingModifiers, pendingKey);
     }
 
     private void SaveButton_Click(object? sender, EventArgs e)
@@ -178,9 +178,9 @@ internal sealed class MainForm : Form
         };
 
         bool startupUpdated = StartupManager.SetEnabled(settings.StartWithWindows);
-        SettingsStore.Save(settings);
+        SettingsStore.SaveDefault(settings);
         RegisterCurrentHotkey();
-        currentHotkeyLabel.Text = "Active: " + FormatHotkey(settings.Modifiers, settings.Key);
+        currentHotkeyLabel.Text = "Active: " + HotkeyDisplayFormatter.FormatHotkey(settings.Modifiers, settings.Key);
 
         if (!startupUpdated)
         {
@@ -240,20 +240,6 @@ internal sealed class MainForm : Form
         {
             ShowPopup("Could not switch audio output");
         }
-    }
-
-    private static string FormatHotkey(uint modifiers, Keys key)
-    {
-        string[] parts =
-        {
-            (modifiers & NativeMethods.ModControl) != 0 ? "Ctrl" : string.Empty,
-            (modifiers & NativeMethods.ModAlt) != 0 ? "Alt" : string.Empty,
-            (modifiers & NativeMethods.ModShift) != 0 ? "Shift" : string.Empty,
-            (modifiers & NativeMethods.ModWin) != 0 ? "Win" : string.Empty,
-            key.ToString()
-        };
-
-        return string.Join(" + ", parts.Where(part => !string.IsNullOrWhiteSpace(part)));
     }
 
     private void ShowPopup(string message)

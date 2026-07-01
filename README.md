@@ -34,6 +34,12 @@ dotnet restore
 dotnet run
 ```
 
+## Tests
+
+```powershell
+dotnet test tests/SoundShift.Tests/SoundShift.Tests.csproj
+```
+
 ## Build
 
 ```powershell
@@ -43,6 +49,11 @@ dotnet publish -c Release -r win-x64 --self-contained false
 Published output goes to:
 
 - `bin/Release/net9.0-windows/win-x64/publish/`
+
+## Project Structure
+
+- `src/ChangeAudioSource/` contains the app source code.
+- `tests/SoundShift.Tests/` contains the unit tests.
 
 ## Usage
 
