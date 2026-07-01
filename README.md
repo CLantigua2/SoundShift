@@ -50,6 +50,14 @@ Published output goes to:
 
 - `bin/Release/net9.0-windows/win-x64/publish/`
 
+## End-User Install
+
+For a normal Windows install, use the GitHub release installer `.exe`.
+
+The release installer places SoundShift under `C:\Program Files\SoundShift` and creates Start Menu shortcuts. An optional desktop shortcut is included during installation.
+
+If you are building a release yourself, the GitHub Actions workflow publishes the app self-contained and compiles the installer automatically.
+
 ## Project Structure
 
 - `src/ChangeAudioSource/` contains the app source code.
