@@ -81,6 +81,8 @@ dotnet publish -c Release -r win-x64 --self-contained true
 
 The GitHub Actions workflow publishes the app self-contained and builds the installer `.exe` automatically for stable tags in `vX.Y.Z` format. The tag must be newer than the previous release; it sets both the app and installer versions used for update checks. Manual workflow runs build without publishing a release.
 
+Tagged releases include notes generated from the commits since the previous tag and a downloadable `CHANGELOG.md` covering the release history. The changelog is generated during the release build, not committed back to the repository. Conventional commit prefixes such as `feat:` and `fix:` group the notes; other commit messages are included too.
+
 ## Project Structure
 
 - `src/ChangeAudioSource/` contains the app source code.
