@@ -10,9 +10,8 @@ namespace ChangeAudioSource;
 
 internal sealed class MainForm : Form
 {
-    private const int HotkeyId = 0xB001;
-
     private readonly AudioDeviceService audioDeviceService = new();
+    private readonly GlobalHotkey hotkey = new();
     private readonly NotifyIcon trayIcon;
     private readonly Icon appIcon;
     private readonly TextBox hotkeyTextBox;
@@ -157,22 +156,8 @@ internal sealed class MainForm : Form
 
         _ = StartupManager.SetEnabled(settings.StartWithWindows);
         RefreshDevices();
-    }
-
-    protected override void OnHandleCreated(EventArgs e)
-    {
-        base.OnHandleCreated(e);
+        hotkey.Pressed += (_, _) => SwitchToNextPlaybackDevice();
         RegisterCurrentHotkey();
-    }
-
-    protected override void WndProc(ref Message m)
-    {
-        if (m.Msg == NativeMethods.WmHotkey && m.WParam == HotkeyId)
-        {
-            SwitchToNextPlaybackDevice();
-        }
-
-        base.WndProc(ref m);
     }
 
     protected override void Dispose(bool disposing)
@@ -182,7 +167,7 @@ internal sealed class MainForm : Form
             updateCancellation.Cancel();
             updateCancellation.Dispose();
             updateClient.Dispose();
-            NativeMethods.UnregisterHotKey(Handle, HotkeyId);
+            hotkey.Dispose();
             trayIcon.Visible = false;
             trayIcon.Dispose();
             appIcon.Dispose();
@@ -255,15 +240,7 @@ internal sealed class MainForm : Form
 
     private void RegisterCurrentHotkey()
     {
-        if (!IsHandleCreated)
-        {
-            return;
-        }
-
-        NativeMethods.UnregisterHotKey(Handle, HotkeyId);
-
-        uint modifiers = settings.Modifiers | NativeMethods.ModNoRepeat;
-        bool ok = NativeMethods.RegisterHotKey(Handle, HotkeyId, modifiers, (uint)settings.Key);
+        bool ok = hotkey.Register(settings.Key, settings.Modifiers);
         if (!ok)
         {
             MessageBox.Show(
