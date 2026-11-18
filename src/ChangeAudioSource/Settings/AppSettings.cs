@@ -9,4 +9,8 @@ internal sealed class AppSettings
     public uint Modifiers { get; set; }
 
     public bool StartWithWindows { get; set; }
+
+    public bool CheckForUpdatesOnStartup { get; set; }
+
+    public List<string> ExcludedDeviceIds { get; set; } = new();
 }

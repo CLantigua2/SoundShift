@@ -1,5 +1,7 @@
 #define MyAppName "SoundShift"
+#ifndef MyAppVersion
 #define MyAppVersion "1.0.0"
+#endif
 #define MyAppPublisher "CLantigua2"
 #define MyAppExeName "SoundShift.exe"
 

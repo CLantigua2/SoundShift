@@ -22,6 +22,30 @@ public sealed class SettingsStoreTests
             Assert.Equal(Keys.Pause, settings.Key);
             Assert.Equal(0u, settings.Modifiers);
             Assert.False(settings.StartWithWindows);
+            Assert.False(settings.CheckForUpdatesOnStartup);
+            Assert.Empty(settings.ExcludedDeviceIds);
+        }
+        finally
+        {
+            Directory.Delete(root, recursive: true);
+        }
+    }
+
+    [Fact]
+    public void Load_IncludesAllDevices_WhenOlderSettingsHaveNoExclusions()
+    {
+        string root = CreateTempRoot();
+        try
+        {
+            SettingsStore store = CreateStore(root);
+            string settingsFile = Path.Combine(root, "current", "settings.json");
+            Directory.CreateDirectory(Path.GetDirectoryName(settingsFile)!);
+            File.WriteAllText(settingsFile, "{\"Key\": 19, \"StartWithWindows\": true}");
+
+            AppSettings settings = store.Load();
+
+            Assert.True(settings.StartWithWindows);
+            Assert.Empty(settings.ExcludedDeviceIds);
         }
         finally
         {
@@ -40,7 +64,9 @@ public sealed class SettingsStoreTests
             {
                 Key = Keys.S,
                 Modifiers = NativeMethods.ModControl | NativeMethods.ModAlt,
-                StartWithWindows = true
+                StartWithWindows = true,
+                CheckForUpdatesOnStartup = true,
+                ExcludedDeviceIds = new() { "device-1", "device-2" }
             };
 
             string legacyFile = Path.Combine(root, "legacy", "settings.json");
@@ -52,6 +78,8 @@ public sealed class SettingsStoreTests
             Assert.Equal(expected.Key, loaded.Key);
             Assert.Equal(expected.Modifiers, loaded.Modifiers);
             Assert.Equal(expected.StartWithWindows, loaded.StartWithWindows);
+            Assert.Equal(expected.CheckForUpdatesOnStartup, loaded.CheckForUpdatesOnStartup);
+            Assert.Equal(expected.ExcludedDeviceIds, loaded.ExcludedDeviceIds);
         }
         finally
         {
@@ -70,7 +98,9 @@ public sealed class SettingsStoreTests
             {
                 Key = Keys.F12,
                 Modifiers = NativeMethods.ModControl,
-                StartWithWindows = true
+                StartWithWindows = true,
+                CheckForUpdatesOnStartup = true,
+                ExcludedDeviceIds = new() { "device-1", "device-2" }
             };
 
             store.Save(expected);
@@ -83,6 +113,8 @@ public sealed class SettingsStoreTests
             Assert.Equal(expected.Key, saved!.Key);
             Assert.Equal(expected.Modifiers, saved.Modifiers);
             Assert.Equal(expected.StartWithWindows, saved.StartWithWindows);
+            Assert.Equal(expected.CheckForUpdatesOnStartup, saved.CheckForUpdatesOnStartup);
+            Assert.Equal(expected.ExcludedDeviceIds, saved.ExcludedDeviceIds);
         }
         finally
         {

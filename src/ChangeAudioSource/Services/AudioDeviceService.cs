@@ -10,6 +10,20 @@ internal sealed class AudioDeviceService
 {
     internal sealed record PlaybackDevice(string Id, string Name);
 
+    internal static PlaybackDevice? GetNextPlaybackDevice(
+        IEnumerable<PlaybackDevice> devices, IEnumerable<string> excludedDeviceIds, string? currentId)
+    {
+        HashSet<string> excluded = new(excludedDeviceIds, StringComparer.OrdinalIgnoreCase);
+        List<PlaybackDevice> included = devices.Where(device => !excluded.Contains(device.Id)).ToList();
+        if (included.Count == 0)
+        {
+            return null;
+        }
+
+        int currentIndex = included.FindIndex(device => string.Equals(device.Id, currentId, StringComparison.OrdinalIgnoreCase));
+        return included[(currentIndex + 1) % included.Count];
+    }
+
     internal List<PlaybackDevice> GetActivePlaybackDevices()
     {
         using MMDeviceEnumerator enumerator = new();

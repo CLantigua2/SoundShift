@@ -22,9 +22,28 @@ jobs:
         with:
           dotnet-version: '9.0.x'
 
+      - name: Determine version
+        id: version
+        shell: pwsh
+        env:
+          RELEASE_REF_TYPE: ${{ github.ref_type }}
+          RELEASE_REF_NAME: ${{ github.ref_name }}
+        run: |
+          $version = '1.0.0'
+          if ($env:RELEASE_REF_TYPE -eq 'tag') {
+            $tag = $env:RELEASE_REF_NAME
+            if ($tag -notmatch '^v\d+\.\d+\.\d+$') { throw 'Release tags must use vX.Y.Z.' }
+            $version = $tag.Substring(1)
+          }
+          "version=$version" >> $env:GITHUB_OUTPUT
+
+      - name: Test
+        shell: pwsh
+        run: dotnet test tests/SoundShift.Tests/SoundShift.Tests.csproj -c Release
+
       - name: Publish app
         shell: pwsh
-        run: .\scripts\publish-self-contained.ps1
+        run: .\scripts\publish-self-contained.ps1 -Version '${{ steps.version.outputs.version }}'
 
       - name: Install Inno Setup
         shell: pwsh
@@ -34,9 +53,11 @@ jobs:
         shell: pwsh
         run: |
           $iscc = 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe'
-          & $iscc .\installer\SoundShift.iss
+          & $iscc /DMyAppVersion=${{ steps.version.outputs.version }} .\installer\SoundShift.iss
+          if ($LASTEXITCODE -ne 0) { throw "Inno Setup failed with exit code $LASTEXITCODE" }
 
       - name: Publish GitHub Release
+        if: github.ref_type == 'tag'
         uses: softprops/action-gh-release@v2
         with:
           files: dist/installer/SoundShift-Setup.exe

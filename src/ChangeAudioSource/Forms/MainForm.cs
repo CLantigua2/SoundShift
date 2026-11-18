@@ -1,6 +1,9 @@
 using System;
+using System.Collections.Generic;
+using System.Diagnostics;
 using System.Drawing;
 using System.Linq;
+using System.Net.Http;
 using System.Windows.Forms;
 
 namespace ChangeAudioSource;
@@ -15,23 +18,30 @@ internal sealed class MainForm : Form
     private readonly TextBox hotkeyTextBox;
     private readonly Label currentHotkeyLabel;
     private readonly CheckBox startWithWindowsCheckBox;
+    private readonly CheckBox checkForUpdatesCheckBox;
+    private readonly CheckedListBox deviceList;
+    private readonly HashSet<string> pendingExcludedDeviceIds;
+    private readonly HttpClient updateClient = new() { Timeout = TimeSpan.FromMinutes(5) };
+    private readonly CancellationTokenSource updateCancellation = new();
 
     private AppSettings settings;
     private Keys pendingKey;
     private uint pendingModifiers;
     private bool isExiting;
+    private bool checkingForUpdates;
 
     internal MainForm()
     {
         settings = SettingsStore.LoadDefault();
         pendingKey = settings.Key;
         pendingModifiers = settings.Modifiers;
+        pendingExcludedDeviceIds = new HashSet<string>(settings.ExcludedDeviceIds ?? new(), StringComparer.OrdinalIgnoreCase);
 
         appIcon = Branding.CreateAppIcon();
 
         Text = Branding.AppDisplayName;
         Icon = appIcon;
-        ClientSize = new Size(330, 175);
+        ClientSize = new Size(330, 380);
         FormBorderStyle = FormBorderStyle.FixedDialog;
         MaximizeBox = false;
         MinimizeBox = true;
@@ -77,14 +87,52 @@ internal sealed class MainForm : Form
             Checked = settings.StartWithWindows
         };
 
+        checkForUpdatesCheckBox = new CheckBox
+        {
+            AutoSize = true,
+            Location = new Point(12, 140),
+            Text = "Check for updates on startup",
+            Checked = settings.CheckForUpdatesOnStartup
+        };
+
+        Label deviceLabel = new()
+        {
+            AutoSize = true,
+            Location = new Point(12, 179),
+            Text = "Playback devices to cycle"
+        };
+
+        deviceList = new CheckedListBox
+        {
+            Location = new Point(12, 203),
+            Size = new Size(300, 128),
+            CheckOnClick = true,
+            DisplayMember = nameof(AudioDeviceService.PlaybackDevice.Name),
+            HorizontalScrollbar = true
+        };
+        deviceList.ItemCheck += DeviceList_ItemCheck;
+
+        Button refreshButton = new()
+        {
+            Text = "Refresh devices",
+            Location = new Point(12, 342),
+            AutoSize = true
+        };
+        refreshButton.Click += (_, _) => RefreshDevices();
+
         Controls.Add(instructionsLabel);
         Controls.Add(hotkeyTextBox);
         Controls.Add(saveButton);
         Controls.Add(currentHotkeyLabel);
         Controls.Add(startWithWindowsCheckBox);
+        Controls.Add(checkForUpdatesCheckBox);
+        Controls.Add(deviceLabel);
+        Controls.Add(deviceList);
+        Controls.Add(refreshButton);
 
         ContextMenuStrip trayMenu = new();
         trayMenu.Items.Add("Open Settings", null, (_, _) => ShowSettings());
+        trayMenu.Items.Add("Check for updates", null, async (_, _) => await CheckForUpdatesAsync(manual: true));
         trayMenu.Items.Add("Exit", null, (_, _) => ExitApplication());
 
         trayIcon = new NotifyIcon
@@ -99,8 +147,16 @@ internal sealed class MainForm : Form
 
         Resize += MainForm_Resize;
         FormClosing += MainForm_FormClosing;
+        Shown += async (_, _) =>
+        {
+            if (settings.CheckForUpdatesOnStartup)
+            {
+                await CheckForUpdatesAsync(manual: false);
+            }
+        };
 
         _ = StartupManager.SetEnabled(settings.StartWithWindows);
+        RefreshDevices();
     }
 
     protected override void OnHandleCreated(EventArgs e)
@@ -123,6 +179,9 @@ internal sealed class MainForm : Form
     {
         if (disposing)
         {
+            updateCancellation.Cancel();
+            updateCancellation.Dispose();
+            updateClient.Dispose();
             NativeMethods.UnregisterHotKey(Handle, HotkeyId);
             trayIcon.Visible = false;
             trayIcon.Dispose();
@@ -174,7 +233,9 @@ internal sealed class MainForm : Form
         {
             Key = pendingKey,
             Modifiers = pendingModifiers,
-            StartWithWindows = startWithWindowsCheckBox.Checked
+            StartWithWindows = startWithWindowsCheckBox.Checked,
+            CheckForUpdatesOnStartup = checkForUpdatesCheckBox.Checked,
+            ExcludedDeviceIds = pendingExcludedDeviceIds.ToList()
         };
 
         bool startupUpdated = StartupManager.SetEnabled(settings.StartWithWindows);
@@ -213,32 +274,138 @@ internal sealed class MainForm : Form
         }
     }
 
-    private void SwitchToNextPlaybackDevice()
+    private async Task CheckForUpdatesAsync(bool manual)
     {
-        var devices = audioDeviceService.GetActivePlaybackDevices();
-        if (devices.Count == 0)
+        if (checkingForUpdates)
         {
-            ShowPopup("No active playback devices found");
             return;
         }
 
-        string? currentId = audioDeviceService.GetDefaultPlaybackDeviceId();
-        int currentIndex = devices.FindIndex(device => device.Id == currentId);
-
-        int nextIndex = currentIndex < 0
-            ? 0
-            : (currentIndex + 1) % devices.Count;
-
-        var nextDevice = devices[nextIndex];
-
+        checkingForUpdates = true;
         try
         {
+            UpdateService updater = new(updateClient);
+            Version assemblyVersion = typeof(MainForm).Assembly.GetName().Version ?? new Version(1, 0, 0);
+            Version currentVersion = new(assemblyVersion.Major, assemblyVersion.Minor, Math.Max(0, assemblyVersion.Build));
+            using CancellationTokenSource checkTimeout = CancellationTokenSource.CreateLinkedTokenSource(updateCancellation.Token);
+            checkTimeout.CancelAfter(TimeSpan.FromSeconds(15));
+            UpdateService.UpdateInfo? update = await updater.CheckAsync(currentVersion, checkTimeout.Token);
+            if (update is null)
+            {
+                if (manual && !isExiting)
+                {
+                    MessageBox.Show("SoundShift is up to date.", Branding.AppDisplayName);
+                }
+                return;
+            }
+
+            if (isExiting || MessageBox.Show(
+                $"SoundShift {update.Version} is available. Download and run the installer?",
+                Branding.AppDisplayName, MessageBoxButtons.YesNo, MessageBoxIcon.Information) != DialogResult.Yes)
+            {
+                return;
+            }
+
+            trayIcon.ShowBalloonTip(3000, Branding.AppDisplayName, "Downloading update...", ToolTipIcon.Info);
+            string installerPath = await updater.DownloadAsync(update, updateCancellation.Token);
+            if (isExiting)
+            {
+                return;
+            }
+
+            using Process? installer = Process.Start(new ProcessStartInfo(installerPath) { UseShellExecute = true });
+            if (installer is null)
+            {
+                throw new InvalidOperationException("Could not start the installer.");
+            }
+            ExitApplication();
+        }
+        catch (OperationCanceledException) when (isExiting)
+        {
+        }
+        catch (Exception)
+        {
+            if (manual && !isExiting)
+            {
+                MessageBox.Show("Could not check for or install updates. Please try again later.",
+                    Branding.AppDisplayName, MessageBoxButtons.OK, MessageBoxIcon.Warning);
+            }
+            else if (!isExiting)
+            {
+                trayIcon.ShowBalloonTip(3000, Branding.AppDisplayName,
+                    "Could not check for or install updates.", ToolTipIcon.Warning);
+            }
+        }
+        finally
+        {
+            checkingForUpdates = false;
+        }
+    }
+
+    private void SwitchToNextPlaybackDevice()
+    {
+        try
+        {
+            var devices = audioDeviceService.GetActivePlaybackDevices();
+            if (devices.Count == 0)
+            {
+                ShowPopup("No active playback devices found");
+                return;
+            }
+
+            var nextDevice = AudioDeviceService.GetNextPlaybackDevice(
+                devices, settings.ExcludedDeviceIds ?? new(), audioDeviceService.GetDefaultPlaybackDeviceId());
+            if (nextDevice is null)
+            {
+                ShowPopup("No playback devices selected");
+                return;
+            }
+
             audioDeviceService.SetDefaultPlaybackDevice(nextDevice.Id);
             ShowPopup("Audio Output: " + nextDevice.Name);
         }
         catch (Exception)
         {
             ShowPopup("Could not switch audio output");
+        }
+    }
+
+    private void DeviceList_ItemCheck(object? sender, ItemCheckEventArgs e)
+    {
+        var device = (AudioDeviceService.PlaybackDevice)deviceList.Items[e.Index];
+        if (e.NewValue == CheckState.Checked)
+        {
+            pendingExcludedDeviceIds.Remove(device.Id);
+        }
+        else
+        {
+            pendingExcludedDeviceIds.Add(device.Id);
+        }
+    }
+
+    private void RefreshDevices()
+    {
+        try
+        {
+            var devices = audioDeviceService.GetActivePlaybackDevices();
+            deviceList.ItemCheck -= DeviceList_ItemCheck;
+            try
+            {
+                deviceList.Items.Clear();
+                foreach (var device in devices)
+                {
+                    deviceList.Items.Add(device, !pendingExcludedDeviceIds.Contains(device.Id));
+                }
+            }
+            finally
+            {
+                deviceList.ItemCheck += DeviceList_ItemCheck;
+            }
+        }
+        catch (Exception)
+        {
+            MessageBox.Show("Could not load playback devices.", Branding.AppDisplayName,
+                MessageBoxButtons.OK, MessageBoxIcon.Warning);
         }
     }
 
@@ -268,6 +435,7 @@ internal sealed class MainForm : Form
 
     private void ShowSettings()
     {
+        RefreshDevices();
         Show();
         WindowState = FormWindowState.Normal;
         Activate();

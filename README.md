@@ -12,13 +12,21 @@ Small Windows system tray app that switches playback devices using a user-define
 
 The installer places SoundShift in `C:\Program Files\SoundShift`, adds Start Menu shortcuts, and can optionally create a desktop shortcut.
 
+## Updates
+
+To update an older installation, exit SoundShift from the tray, download the latest `SoundShift-Setup.exe` from GitHub Releases, and run it. Setup installs over the existing version and keeps your settings. An older version cannot check for updates until you install a release containing the updater.
+
+In versions with the updater, select **Check for updates on startup** and click **Save**, or use **Check for updates** in the tray menu. SoundShift checks GitHub Releases and asks before downloading the installer. It then exits and opens setup; follow the installer and approve any Windows elevation prompt. Automatic checks are off by default and require an internet connection. If a check fails, you can retry from the tray or install manually.
+
+The updater trusts this repository's GitHub Release and HTTPS download; it does not independently verify a digital signature or checksum.
+
 ## Usage
 
 1. Start SoundShift from the Start Menu or desktop shortcut.
 2. Open the settings window from the tray icon.
 3. Click the hotkey box and press the key or key combination you want to use.
 4. Optionally enable **Start with Windows**.
-5. Click **Save**.
+5. Uncheck any playback devices you do not want to cycle through, then click **Save**.
 6. Minimize or close the settings window. SoundShift stays running in the system tray.
 7. Press your hotkey to switch to the next active playback device.
 
@@ -27,8 +35,10 @@ The installer places SoundShift in `C:\Program Files\SoundShift`, adds Start Men
 - Sits in the system tray after launch.
 - Lets you bind a single key, such as `Pause`, or a key combination, such as `Ctrl + Alt + S`.
 - Cycles to the next active playback output device when the hotkey is pressed.
+- Lets you exclude playback devices from the cycle without disabling them in Windows.
 - Shows a small bottom-right popup with the new audio output.
 - Includes an optional **Start with Windows** setting.
+- Can check for new GitHub releases and launch the installer with your approval.
 
 ## Requirements
 
@@ -69,7 +79,7 @@ Build a local publish from source:
 dotnet publish -c Release -r win-x64 --self-contained true
 ```
 
-The GitHub Actions workflow publishes the app self-contained and builds the installer `.exe` automatically for tagged releases.
+The GitHub Actions workflow publishes the app self-contained and builds the installer `.exe` automatically for stable tags in `vX.Y.Z` format. The tag must be newer than the previous release; it sets both the app and installer versions used for update checks. Manual workflow runs build without publishing a release.
 
 ## Project Structure
 
@@ -92,4 +102,5 @@ Tray menu:
 ## Notes
 
 - If a hotkey is already used by another app, registration will fail and a warning will appear.
+- Use **Refresh devices** after connecting or disconnecting an output. New devices are included by default; excluded devices remain excluded when reconnected.
 - Audio switching sets the default device for Console, Multimedia, and Communications roles.
